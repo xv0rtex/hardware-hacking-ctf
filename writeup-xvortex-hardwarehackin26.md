@@ -7,12 +7,12 @@
 
 The goal of the challenge is to locate the GPIO pins on the bottom of the board and tie GPIO2, GPIO3, GPIO4, and GPIO5 to ground (GND).
 
-![image.png](Final/image.png)
+![image.png](images/image.png)
 
 ## Solution
 
 The statement suggests using keys to make the bridge, but the five pins that need to be connected together match exactly the width of a USB Type-A connector, so it's enough to plug one in to short-circuit them all at once.
-![image.png](Final/image3.jpeg)
+![image.png](images/image3.jpeg)
 After holding the connection for fifteen seconds, the board returns the challenge flag.
 
 ---
@@ -65,7 +65,7 @@ They are exactly 4 consecutive addresses with a 4-byte stride.
 ```
 We can also see that exactly `0x3C` bytes away is the string "CHALLENGE: In order crazy baud rates!", so this array belongs to the challenge.
 
-![code-snapshot131.png](Final/code-snapshot131.png)
+![code-snapshot131.png](images/code-snapshot131.png)
 
 ---
 
@@ -219,12 +219,12 @@ The RP2350 is a dual-core chip (ARM Cortex-M33 + RISC-V Hazard3). I open the bin
 - `-b 32` for 32-bit width
 - `-m 0x10000000` to map the content to the real flash address
 
-![code-snapshot135.png](Final/code-snapshot135.png)
+![code-snapshot135.png](images/code-snapshot135.png)
 
 ### 2. Sanity check: confirm RISC-V and not ARM Thumb
 
 In ARM Thumb, the typical return is `bx lr` (`0x4770`, bytes `70 47`). In compressed RISC-V it's `c.ret` (`0x8082`, bytes `82 80`). Counting occurrences of each one we can se the binary is RISC-V.
-![code-snapshot136.png](Final/code-snapshot136.png)
+![code-snapshot136.png](images/code-snapshot136.png)
 
 ### 3. Finding the stamp verification strings
 
@@ -291,7 +291,7 @@ INFO: Finding xrefs in noncode sections (e anal.in=io.maps.x; aav)
 
 `axt` returns nothing. The reason is that RISC-V loads addresses in two phases with `auipc + addi` (PC-relative) or shoves almost everything into the global section via `gp` (global pointer). Radare2 doesn't correctly resolve that pair in its default analysis, so PC-relative xrefs are lost. This can be seen by inspecting the disassembly near the startup:
 
-![image.png](Final/image%201.png)
+![image.png](images/image%201.png)
 
 So I switch approaches.
 
@@ -315,7 +315,7 @@ ASCII strings are stored in a block inside `rodata`, so just before that date th
 
 I step back a bit and dump 96 bytes to see the transition:
 
-![2026-04-20_16-12.png](Final/2026-04-20_16-12.png)
+![2026-04-20_16-12.png](images/2026-04-20_16-12.png)
 
 Three things stand out:
 
