@@ -5,14 +5,18 @@
 
 ## Statement
 
-The goal of the challenge is to locate the GPIO pins on the bottom of the board and tie GPIO2, GPIO3, GPIO4, and GPIO5 to ground (GND).
+The goal of this challenge is to locate the GPIO pins on the bottom of the board and tie GPIO2, GPIO3, GPIO4, and GPIO5 to ground (GND).
+
 
 ![image.png](images/image.png)
+
 
 ## Solution
 
 The statement suggests using keys to make the bridge, but the five pins that need to be connected together match exactly the width of a USB Type-A connector, so it's enough to plug one in to short-circuit them all at once.
+
 ![image.png](images/image3.jpeg)
+
 After holding the connection for fifteen seconds, the board returns the challenge flag.
 
 ---
@@ -27,7 +31,7 @@ The challenge asks you to keep changing the communication speed and write down t
 
 The first approach was to launch the challenge at 9600 baud with `picom` and try different speeds; if you get it right, the program shows a portion of the flag, and if not, you have to press the board's reset button and start over.
 
-The most common baud rates are the following:
+The most common baud rates are the following ones:
 
 | 1800 bauds |
 | --- |
@@ -41,12 +45,14 @@ The most common baud rates are the following:
 | 76800 bauds |
 | 115200 bauds |
 
-In the end I used PuTTY, since it allows you to change the speed on an already-open session without closing the window, and it's really more convenient.
+Finally, I used PuTTY, since it allows you to change the speed on an already-open session without closing the window.
+
 
 ## Solution
 
-Starting at 9600 and going up speed by speed, the first part of the flag appeared at 19200. Following the same procedure, the second one came out when going back to 9600, the third at 38400, and the fourth at 115200. Joining the four fragments gives you the complete flag.
-In the end, I solved the challenge by brute force, trying the most common bands until I got all the fragments. But with `r2` we can search for these bands to see if they appear, and if so, we can obtain the array where the correct bands are defined.
+Starting at 9600 and going up speed by speed, the first part of the flag appeared at 19200 bauds. Following the same procedure, the second one came out when going back to 9600, the third at 38400, and the fourth at 115200. Piecing together the four fragments gives you the full flag.
+
+Lastly, I solved the challenge by bruteforcing, trying the most common bands until I got all the fragments. But with `r2` we can search for these bands to see if they appear, and if so, we can obtain the array where the correct bands are defined.
 ```
 [0x10000000]> /v4 19200
 0x10033298 hit0_0 004b0000
@@ -63,7 +69,7 @@ They are exactly 4 consecutive addresses with a 4-byte stride.
 [0x10033298]> pxw 16
 0x10033298  0x00004b00 0x00002580 0x00009600 0x0001c200  .K...%..........
 ```
-We can also see that exactly `0x3C` bytes away is the string "CHALLENGE: In order crazy baud rates!", so this array belongs to the challenge.
+We can also see that the string "CHALLENGE: In order crazy baud rates!" is exactly `0x3C` bytes away, so this array belongs to the challenge.
 
 ![code-snapshot131.png](images/code-snapshot131.png)
 
@@ -91,7 +97,7 @@ You also have to send 10 stamp bytes followed by 16-bit words in hexadecimal con
 
 ## Analysis
 
-Before getting into it, three things about PIO.
+Before getting into it, there are three things we need to know about PIO.
 
 Each instruction is 16 bits with this format:
 
@@ -103,7 +109,7 @@ bits 7..5   : destination/condition
 bits 4..0   : operand (5-bit register → values 0..31)
 ```
 
-Since side-set is non-optional, every instruction must carry bit 12 set to the LED state corresponding to that phase.
+Since side-set is non-optional, every instruction must carry bit 12 set to the LED state for that phase.
 
 The clock runs at 10 kHz, so each cycle lasts 100 µs. Translated to the requested pattern:
 
@@ -111,7 +117,7 @@ The clock runs at 10 kHz, so each cycle lasts 100 µs. Translated to the request
 - Phase 2: ~8 s → ~80,000 cycles
 - Phase 3: ~10 s → ~100,000 cycles
 
-PIO only has X and Y as working registers, and the `set` literals are 5 bits (max 31). This limitation complicates the delay calculation. A simple loop like `set x, 31 / jmp x--, label [15]` gives at most `32 * 16 = 512` cycles. Nesting two loops (Y outer, X inner) gets you to `32 * 32 * 16 = 16,384` cycles, barely 1.6 s. Far from the ten seconds of phase 3.
+PIO only has X and Y as working registers, and the `set` literals are 5 bits (max 31). This limitation complicates the calculation of the delay. A simple loop like `set x, 31 / jmp x--, label [15]` gives at most `32 * 16 = 512` cycles. Nesting two loops (Y outer, X inner) gets you to `32 * 32 * 16 = 16,384` cycles, barely 1.6 s. Far from the ten seconds we had of phase 3.
 
 ### ISR as a third counter
 
@@ -144,7 +150,7 @@ The skeleton is the same for the three active phases:
 
 The timings are fine-tuned with two parameters: the delay of the inner jmp (if you want to shorten a phase) and the number of passes (initial value of Y before the `mov isr`).
 
-- Phase 1 (~3 s): 2 passes. I lower the delay of the inner jmp to 13 so as not to overshoot → comes out to ~3.08 s.
+- Phase 1 (~3 s): 2 passes. I lower the delay of the inner jmp to 13 to avoid overshooting → comes out to ~3.08 s.
 - Phase 2 (~8 s): 5 passes with all delays at 15 → ~8.74 s.
 - Phase 3 (~10 s): 6 passes with all delays at 15 → ~10.48 s.
 - Phase 4: `set pins, 0` with side=0 and a `jmp <self>` that stays there forever.
@@ -224,6 +230,7 @@ The RP2350 is a dual-core chip (ARM Cortex-M33 + RISC-V Hazard3). I open the bin
 ### 2. Sanity check: confirm RISC-V and not ARM Thumb
 
 In ARM Thumb, the typical return is `bx lr` (`0x4770`, bytes `70 47`). In compressed RISC-V it's `c.ret` (`0x8082`, bytes `82 80`). Counting occurrences of each one we can se the binary is RISC-V.
+
 ![code-snapshot136.png](images/code-snapshot136.png)
 
 ### 3. Finding the stamp verification strings
@@ -289,7 +296,7 @@ INFO: Finding xrefs in noncode sections (e anal.in=io.maps.x; aav)
 [0x100352e4]>
 ```
 
-`axt` returns nothing. The reason is that RISC-V loads addresses in two phases with `auipc + addi` (PC-relative) or shoves almost everything into the global section via `gp` (global pointer). Radare2 doesn't correctly resolve that pair in its default analysis, so PC-relative xrefs are lost. This can be seen by inspecting the disassembly near the startup:
+`axt` returns nothing. The reason is that RISC-V loads addresses in two phases with `auipc + addi` (PC-relative) or shoves almost everything into the global section via `gp` (global pointer). Radare2 doesn't correctly resolve that pair during its default analysis, causing PC-relative xrefs to be lost. This can be seen by inspecting the disassembly near the startup:
 
 ![image.png](images/image%201.png)
 
@@ -307,7 +314,7 @@ If the code isn't useful, I go for the data. The stamps are 10 apparently random
 [0x10000100]>
 ```
 
-The first one, at `paddr 0x3203c`, is isolated and at the start of its rodata area (it's not part of another phrase like "Compiled: Apr..."). Its real address is `0x1003203c`.
+The first one, at `paddr 0x3203c`, is isolated and at the beginning of its rodata area (it's not part of another phrase like "Compiled: Apr..."). Its real address is `0x1003203c`.
 
 ASCII strings are stored in a block inside `rodata`, so just before that date there should be non-text constants, which is where the stamps likely live.
 
@@ -323,7 +330,7 @@ Three things stand out:
 2. A 48-byte block with high entropy at `0x10032000`–`0x10032030`, following a clear pattern: 10 random bytes followed by `00 00`, repeated four times.
 3. Right after that, the strings start: `"02:35:13"` (from `__TIME__`) and then `"Apr "` (from `__DATE__`).
 
-That zone between the padding and the strings is the stamp table.
+That area between the padding and the strings is the stamp table.
 
 Extracted in clean format:
 
@@ -376,7 +383,7 @@ The first thing is to do the math with the addresses the firmware itself provide
 
 - `user_buf` starts at `0x11000AFC` and is 64 bytes long, so it ends at `0x11000B3C`.
 - The `target` struct starts at `0x11000B40`.
-- Between the two there are 4 bytes corresponding to the TLSF chunk header.
+- Between them there are 4 bytes corresponding to the TLSF chunk header.
 - Inside the struct, the callback is at offset 16 (`0x11000B50`).
 
 Adding up: 64 + 4 + 16 = 84 bytes to the pointer, matching what the challenge indicates.
@@ -406,13 +413,13 @@ On a single line:
 0E B2 C2 CC 6B 40 AA FF E4 5F 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 42 42 42 42 43 43 43 43 43 43 43 43 43 43 43 43 43 43 43 43 80 16 00 20
 ```
 
-I used `0x41` for the user buffer, `0x42` for the TLSF header, and `0x43` for the struct fields, so that if something fails, a dump lets you tell which zone is being overwritten incorrectly. In the end it wasn't needed, but better to set up that visibility than to have everything with the same byte.
+I used `0x41` for the user buffer, `0x42` for the TLSF header, and `0x43` for the struct fields, so that if something fails, a dump lets you tell which region is being overwritten incorrectly. In the end it wasn't needed, however, establishing that visibility is better than to have everything with the same byte.
 
 ---
 
 # 5. The PSRAM HEAP Use-After-Free
 
-Another RISC-V exploitation challenge on the RP2350. The scenario is similar to the heap overflow, but this time nothing needs to be overflowed: the bug is a Use-After-Free on the PSRAM with the TLSF allocator.
+Another RISC-V exploitation challenge on the RP2350. The scenario is similar to the previous heap overflow, but this time nothing needs to be overflowed: the bug is a Use-After-Free on the PSRAM with the TLSF allocator.
 
 ## Statement
 
@@ -439,7 +446,7 @@ Since `victim` and `new_buf` are physically the same chunk of memory, whatever I
 
 ## Analysis: why it always lands in the same slot
 
-TLSF uses a LIFO policy. On `free`, the freed chunk is inserted at the head of the free-list of the corresponding size. If right after that a `malloc` of that same size is requested, the allocator returns that same chunk. It's the behavior you would seek manually to do heap grooming, except here it comes served on a plate.
+TLSF uses a LIFO policy. On `free`, the freed chunk is inserted at the head of the free-list of the corresponding size. If right after that a `malloc` of that same size is requested, the allocator returns that same chunk. It's the behavior you would seek manually to do heap grooming, except here it is handed to you on a silver platter.
 
 The same thing happens with dlmalloc (fastbins), glibc (tcache), and others. It's not exclusive to TLSF.
 
@@ -502,7 +509,7 @@ Before calling `target->callback()`, the firmware checks that `guard->magic == 0
 
 ## Analysis: calculating the distances
 
-The challenge warns: "No distances are given!", so I do the math by hand.
+The challenge warns: "No distances are given!", so I do the math myself.
 
 From user_buf[0] to guard[0]:
 
@@ -557,4 +564,4 @@ The stamp used is stamp[1] from the table obtained from the firmware at `flash 0
 
 # Conclusions
 
-This was my first hardware hacking CTF, and it won't be the last. I genuinely enjoyed every challenge, and you can feel the creativity behind them, making a simple puzzle into something worth sitting down for hours. Along the way I learnd a lot about how the RP2040's PIO actually works under the hood, someting that really caugth my curiosity. It made me want to spend more time messing around with the RP2040 to really understand where its limits are.
+This was my first hardware hacking CTF, and it won't be the last. I genuinely enjoyed every challenge, and you can feel the creativity behind them, turning a simple puzzle into something worth sitting down for hours. Along the way I learned a lot about how the RP2040's PIO actually works under the hood, something that really caught my curiosity. It made me want to spend more time messing around with the RP2040 to really understand where its limits are.
