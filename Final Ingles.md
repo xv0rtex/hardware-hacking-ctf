@@ -1,4 +1,4 @@
-# Second Winner: @xvortex (Marc Barrantes)
+# Second Winner: @xvortex (Diego Soria)
 HardwareHackingEs2026 CTF Writeup
 
 # 1. Long Short
