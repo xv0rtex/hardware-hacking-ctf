@@ -1,5 +1,5 @@
 # Second Winner: @xvortex (Diego Soria)
-HardwareHackingEs2026 CTF Writeup
+# HardwareHackingEs2026 CTF Writeup
 
 # 1. Long Short
 
